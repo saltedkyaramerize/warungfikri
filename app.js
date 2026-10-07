@@ -30,7 +30,7 @@ function dlg(msg, o, cb) {
 function needPin(cb) { if (owner) return cb(); dlg('Masukkan PIN Admin/Owner', {type:'password'}, v => v === S.set.pin ? cb() : toast('PIN salah')); }
 function toggleOwner() { if (owner) { owner = false; view(); } else needPin(() => { owner = true; view(); }); }
 function go(t) { tab = t; view(); }
-function net() { $('#net').textContent = navigator.onLine ? ' ' : '  – data tersimpan di perangkat'; }
+function net() { $('#net').textContent = navigator.onLine ? '🟢 Online' : '🔴 Offline – data tersimpan di perangkat'; }
 addEventListener('online', net); addEventListener('offline', net); net();
 
 
@@ -205,21 +205,48 @@ function vRiwayat() {
 <div class="row"><div><label>Tahun</label><select onchange="hf.y=this.value;vRiwayat()">${oy}</select></div><div><label>Bulan</label><select onchange="hf.m=this.value;vRiwayat()">${om}</select></div><div><label>Tanggal</label><select onchange="hf.d=this.value;vRiwayat()">${od}</select></div><div><label>Waktu dari</label><input type="time" value="${hf.t1}" onchange="hf.t1=this.value;vRiwayat()"></div><div><label>Waktu sampai</label><input type="time" value="${hf.t2}" onchange="hf.t2=this.value;vRiwayat()"></div></div>
 <div class="flex" style="margin-top:10px"><button onclick="hf={y:'',m:'',d:'',t1:'',t2:''};vRiwayat()">Reset filter</button></div></div>
 <div class="card"><div class="row"><div class="kpi"><small>Jumlah transaksi</small><b>${ok.length}</b></div><div class="kpi"><small>Total belanja</small><b>${fmt(sum(ok, 'total'))}</b></div></div></div>
-<div class="card"><h3>${filtered ? ' (terfilter)' : ''}</h3><p class="mut">Dihitung dari transaksi yang tampil di bawah, sudah dikurangi refund.</p>${ringkas(ok)}</div>
+<div class="card"><h3>Grafik Penjualan 30 Hari Terakhir</h3><p class="mut">Tidak terpengaruh filter di atas. Sudah dikurangi refund.</p>${grafik()}</div>
+<div class="card"><h3>Ringkasan Penjualan Barang${filtered ? ' (terfilter)' : ''}</h3><p class="mut">Dihitung dari transaksi yang tampil di bawah, sudah dikurangi refund.</p>${ringkas(ok)}</div>
 <div class="card"><h3>Riwayat Transaksi${filtered ? ' (terfilter)' : ''}</h3><div style="overflow-x:auto"><table class="stack">${list.slice(0, LIM).map(s => `<tr style="${s.void ? 'opacity:.45;text-decoration:line-through' : ''}"><td>${dt(s.ts)}</td><td>${itx(s)}</td><td data-l="Bayar">${s.pm}</td><td data-l="Total">${fmt(s.total)}</td><td style="white-space:nowrap">${s.void ? '' : `<button class="sm" onclick="nota(${s.id})">🖨 Nota</button> <button class="sm del" onclick="voidS(${s.id})">Hapus</button>`}</td></tr>`).join('') || '<tr><td class="mut">Tidak ada transaksi pada filter ini</td></tr>'}</table></div>${list.length > LIM ? `<p class="mut">Menampilkan ${LIM} dari ${list.length} transaksi. Persempit filter untuk melihat sisanya.</p>` : ''}</div>`;
 }
+const rb = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '') + 'jt' : n >= 1e3 ? Math.round(n / 1e3) + 'rb' : String(Math.round(n));
+const nice = v => { const e = 10 ** Math.floor(Math.log10(v)), f = v / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+function grafik() {
+  const D = 30, t0 = new Date().setHours(0, 0, 0, 0), days = Array.from({length:D}, (_, i) => { const d = new Date(t0); d.setDate(d.getDate() - (D - 1 - i)); return {t:+d, om:0, hp:0}; }), kat = {};
+  S.sales.forEach(s => {
+    if (s.void) return;
+    const i = Math.round((new Date(s.ts).setHours(0, 0, 0, 0) - days[0].t) / 864e5); if (i < 0 || i >= D) return;
+    days[i].om += s.total; days[i].hp += s.cost;
+    s.items.forEach(x => { const q = x.qty - (x.rf || 0); if (q > 0) kat[catOf(x.id)] = (kat[catOf(x.id)] || 0) + q * x.price; });
+  });
+  const om = sum(days, 'om'), lb = om - sum(days, 'hp'), best = days.reduce((a, d) => d.om > a.om ? d : a, days[0]), dm = t => new Date(t).toLocaleDateString('id-ID', {day:'numeric', month:'short'});
+  const W = 700, H = 250, L = 46, R = 8, T = 12, B = 26, pw = W - L - R, ph = H - T - B, ymax = nice(Math.max(...days.map(d => d.om), 1)), bw = pw / D;
+  const y = v => T + ph - v / ymax * ph, cx = i => L + bw * i + bw / 2;
+  const grid = [0, 1, 2, 3, 4].map(k => { const v = ymax * k / 4; return `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--b)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" style="fill:var(--m)">${rb(v)}</text>`; }).join('');
+  const bars = days.map((d, i) => `<rect x="${cx(i) - bw * 0.35}" y="${y(d.om)}" width="${bw * 0.7}" height="${Math.max(0, T + ph - y(d.om))}" rx="2" style="fill:var(--p)"><title>${dm(d.t)}: omzet ${fmt(d.om)}, laba ${fmt(d.om - d.hp)}</title></rect>`).join('');
+  const xl = days.map((d, i) => (i % 5 == 0 || i == D - 1) ? `<text x="${cx(i)}" y="${H - 8}" text-anchor="middle" font-size="11" style="fill:var(--m)">${new Date(d.t).getDate()}/${new Date(d.t).getMonth() + 1}</text>` : '').join('');
+  const line = days.map((d, i) => `${cx(i)},${y(Math.max(0, d.om - d.hp))}`).join(' ');
+  const kt = Object.entries(kat).sort((a, b) => b[1] - a[1]), km = kt.length ? kt[0][1] : 1;
+  return `<div class="row"><div class="kpi"><small>Omzet 30 hari</small><b>${fmt(om)}</b></div><div class="kpi"><small>Laba bersih</small><b>${fmt(lb)}</b></div><div class="kpi"><small>Rata-rata per hari</small><b>${fmt(om / D)}</b></div><div class="kpi"><small>Hari terlaris</small><b>${om ? dm(best.t) : '-'}</b></div></div>
+<div class="flex mut" style="margin:10px 0 4px"><span><span style="display:inline-block;width:10px;height:10px;background:var(--p);border-radius:2px"></span> Omzet harian</span><span><span style="display:inline-block;width:14px;height:3px;background:var(--w);vertical-align:middle"></span> Laba bersih</span></div>
+<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Grafik omzet dan laba harian 30 hari terakhir" style="display:block;max-width:100%;height:auto">${grid}${bars}<polyline points="${line}" fill="none" stroke-width="2.5" stroke-linejoin="round" style="stroke:var(--w)"/>${xl}</svg>
+<h3 style="margin-top:14px">Omzet per Kategori (30 hari)</h3>${kt.map(([c, v]) => `<div style="margin:6px 0"><div class="flex" style="justify-content:space-between"><span>${esc(c)}</span><b>${fmt(v)}</b></div><div style="background:var(--bg);border-radius:6px;height:12px"><div style="width:${Math.max(2, v / km * 100)}%;height:12px;border-radius:6px;background:var(--p)"></div></div></div>`).join('') || '<p class="mut">Belum ada penjualan 30 hari terakhir</p>'}`;
+}
+const catOf = id => (S.products.find(p => p.id == id) || {}).cat || 'Lainnya';
 function ringkas(ok) {
   const m = {};
-  ok.forEach(s => s.items.forEach(i => { const q = i.qty - (i.rf || 0); if (q <= 0) return; const o = m[i.id] || (m[i.id] = {name:i.name, q:0, rev:0}); o.q += q; o.rev += q * i.price; }));
-  const sold = Object.values(m), laris = sold.slice().sort((a, b) => b.q - a.q || b.rev - a.rev).slice(0, 10), jarang = sold.slice().sort((a, b) => a.q - b.q || a.rev - b.rev).slice(0, 10);
+  ok.forEach(s => s.items.forEach(i => { const q = i.qty - (i.rf || 0); if (q <= 0) return; const o = m[i.id] || (m[i.id] = {name:i.name, cat:catOf(i.id), q:0, rev:0}); o.q += q; o.rev += q * i.price; }));
+  const sold = Object.values(m), bc = {};
+  sold.forEach(x => (bc[x.cat] = bc[x.cat] || []).push(x));
+  const cats = Object.entries(bc).map(([c, a]) => ({c, a:a.sort((x, y) => y.q - x.q || y.rev - x.rev), q:sum(a, 'q')})).sort((x, y) => y.q - x.q), jarang = sold.slice().sort((a, b) => a.q - b.q || a.rev - b.rev).slice(0, 10);
   const un = S.products.filter(p => !m[p.id]).map(p => p.name).sort();
   const tb = a => `<table>${a.map((x, n) => `<tr><td>${n + 1}</td><td>${esc(x.name)}</td><td>${x.q} terjual</td><td>${fmt(x.rev)}</td></tr>`).join('') || '<tr><td class="mut">Belum ada penjualan</td></tr>'}</table>`;
-  return `<h3> Paling laris (10 teratas)</h3>${tb(laris)}<h3 style="margin-top:12px"> Jarang dibeli (terjual paling sedikit)</h3>${tb(jarang)}<details style="margin-top:12px"><summary><b>Belum terjual sama sekali (${un.length} barang)</b></summary><p class="mut">${un.map(esc).join(', ') || 'Semua barang pernah terjual'}</p></details>`;
+  return `<h3> Paling laris per kategori (5 teratas tiap kategori)</h3>${cats.map(k => `<h4 style="margin:10px 0 4px">${esc(k.c)} <span class="mut">· ${k.q} terjual</span></h4>${tb(k.a.slice(0, 5))}`).join('') || '<p class="mut">Belum ada penjualan</p>'}<h3 style="margin-top:12px"> Jarang dibeli (terjual paling sedikit)</h3>${tb(jarang)}<details style="margin-top:12px"><summary><b>Belum terjual sama sekali (${un.length} barang)</b></summary><p class="mut">${un.map(esc).join(', ') || 'Semua barang pernah terjual'}</p></details>`;
 }
 function rHist() {
   const e = $('#rh'); if (!e) return;
   const t0 = new Date().setHours(0, 0, 0, 0), L = S.sales.filter(s => !s.void && s.ts >= t0).reverse();
-  e.innerHTML = `<h3>Histori Belanja Hari Ini (${L.length})</h3><p class="mut">kalo udah di rekap tidak bisa direfund direfund.</p>` + (L.map(s => `<div class="ln"><div class="flex" style="justify-content:space-between"><b>#${s.id} · ${new Date(s.ts).toLocaleTimeString('id-ID', {timeStyle:'short'})} · ${s.pm.toUpperCase()}</b><b>${fmt(s.total)}</b></div>${s.cl ? '<span class="tag warn">Sudah direkap</span>' : ''}
+  e.innerHTML = `<h3>Histori Belanja Hari Ini (${L.length})</h3><p class="mut">Tekan Refund pada barang yang dikembalikan pembeli. Uang dikurangi dari penjualan dan barang kembali ke stok. Transaksi yang sudah masuk rekap tutup kasir tidak bisa direfund.</p>` + (L.map(s => `<div class="ln"><div class="flex" style="justify-content:space-between"><b>#${s.id} · ${new Date(s.ts).toLocaleTimeString('id-ID', {timeStyle:'short'})} · ${s.pm.toUpperCase()}</b><b>${fmt(s.total)}</b></div>${s.cl ? '<span class="tag warn">Sudah direkap</span>' : ''}
 ${s.items.map((i, x) => { const q = i.qty - (i.rf || 0); return `<div class="flex" style="justify-content:space-between"><span class="${q ? '' : 'mut'}" style="${q ? '' : 'text-decoration:line-through'}">${esc(i.name)} × ${q} @ ${fmt(i.price)}${i.rf ? ` <span class="tag warn">refund ${i.rf}</span>` : ''}</span>${q && !s.cl ? `<button class="sm del" onclick="refundItem(${s.id},${x})">Refund</button>` : ''}</div>`; }).join('')}</div>`).join('') || '<p class="mut">Belum ada belanja hari ini</p>');
 }
 function refundItem(sid, x) {
