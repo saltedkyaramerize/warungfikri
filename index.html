@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>warung fikri</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Warung Mama Fannyy</h1>
+  <div class="flex"><span class="badge" id="net"></span><button id="role" onclick="toggleOwner()"></button></div>
+</header>
+<div class="low" id="low"></div>
+<nav>
+  <button data-t="kasir" onclick="go('kasir')"> Kasir</button>
+  <button data-t="barang" onclick="go('barang')"> Manajemen Barang</button>
+  <button data-t="tutup" onclick="go('tutup')"> Rekap harian</button>
+  <button data-t="riwayat" onclick="go('riwayat')"> Riwayat</button>
+  <button data-t="lap" onclick="go('lap')"> Laporan</button>
+</nav>
+<main id="app"></main>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
